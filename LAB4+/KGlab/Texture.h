@@ -1,15 +1,12 @@
 ﻿#pragma once
-
 #include <string>
 
-class Texture
-{
+class Texture {
     unsigned int texId = 0;
-
-  public:
-    Texture(){};
+public:
+    Texture() {}
     ~Texture();
-
-    void LoadTexture(const std::string& texture_file_name);
+    void LoadTexture(const std::string& filename);
     void Bind();
+    unsigned int getTexId() const { return texId; }   // ЭТО НУЖНО ДОБАВИТЬ
 };

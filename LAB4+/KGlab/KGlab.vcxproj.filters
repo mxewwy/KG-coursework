@@ -109,6 +109,12 @@
     <None Include="shaders\vb.frag">
       <Filter>shaders</Filter>
     </None>
+    <None Include="shaders\earth.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\earth.vert">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="shaders\f_frac.txt">

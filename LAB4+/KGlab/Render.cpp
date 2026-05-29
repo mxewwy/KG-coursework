@@ -4,420 +4,389 @@
 #include "ObjLoader.h"
 #include "Texture.h"
 
+#define _USE_MATH_DEFINES
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#ifndef MAX
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
 #include <windows.h>
 #include <GL/gl.h>
 #include <GL/glu.h>
-#include <iomanip>
-#include <iostream>
+#include <cmath>
+#include <vector>
+#include <string>
 #include <sstream>
-
+#include <iomanip>
 
 #include "debout.h"
-
-// Внутренняя логика "движка"
 #include "MyOGL.h"
+
 extern OpenGL gl;
 #include "Light.h"
-Light light;
 #include "Camera.h"
-Camera camera;
+#include "Vector3.h"
 
-bool texturing = true;
-bool lightning = true;
-bool alpha = false;
+// -----------------------------------------------------------------
+// Глобальный шейдер для Земли
+// -----------------------------------------------------------------
+Shader earthShader;
 
-// Переключение режимов освещения, текстурирования, альфа-наложения
-void switchModes(OpenGL* sender, KeyEventArg arg)
-{
-    // Конвертируем код клавиши в букву
-    auto key = LOWORD(MapVirtualKeyA(arg.key, MAPVK_VK_TO_CHAR));
-
-    switch (key)
-    {
-    case 'L':
-        lightning = !lightning;
-        break;
-    case 'T':
-        texturing = !texturing;
-        break;
-    case 'A':
-        alpha = !alpha;
-        break;
+// -----------------------------------------------------------------
+// Класс орбиты
+// -----------------------------------------------------------------
+class Orbit {
+public:
+    double a, e, i, Omega, omega, nu;
+    static constexpr double MU = 3.986004418e14;
+    Orbit(double a = 7e6, double e = 0.0, double i = 0.0,
+        double Omega = 0.0, double omega = 0.0, double nu = 0.0)
+        : a(a), e(e), i(i), Omega(Omega), omega(omega), nu(nu) {
     }
-}
+    double period() const { return 2.0 * M_PI * sqrt(a * a * a / MU); }
+    double meanMotion() const { return sqrt(MU / (a * a * a)); }
+    double eccentricAnomaly() const {
+        double E = 2.0 * atan2(sqrt((1.0 - e) / (1.0 + e)) * sin(nu / 2.0), cos(nu / 2.0));
+        return E;
+    }
+    double meanAnomaly() const {
+        double E = eccentricAnomaly();
+        return E - e * sin(E);
+    }
+    double radius() const { return a * (1.0 - e * e) / (1.0 + e * cos(nu)); }
+    double speed() const {
+        double r = radius();
+        return sqrt(MU * (2.0 / r - 1.0 / a));
+    }
+    Vector3 toEci() const {
+        double r = radius();
+        double xOrb = r * cos(nu), yOrb = r * sin(nu);
+        double x1 = xOrb * cos(omega) - yOrb * sin(omega);
+        double y1 = xOrb * sin(omega) + yOrb * cos(omega);
+        double z1 = 0.0;
+        double x2 = x1;
+        double y2 = y1 * cos(i) - z1 * sin(i);
+        double z2 = y1 * sin(i) + z1 * cos(i);
+        double x = x2 * cos(Omega) - y2 * sin(Omega);
+        double y = x2 * sin(Omega) + y2 * cos(Omega);
+        double z = z2;
+        return Vector3(x, y, z);
+    }
+    void advanceTime(double dt) {
+        double n = meanMotion();
+        double M = meanAnomaly() + n * dt;
+        double E = M;
+        for (int i = 0; i < 10; ++i) E = M + e * sin(E);
+        nu = 2.0 * atan2(sqrt(1.0 + e) * sin(E / 2.0), sqrt(1.0 - e) * cos(E / 2.0));
+    }
+};
 
-// Умножение матриц c[M1][N1] = a[M1][N1] * b[M2][N2]
-template <typename T, int M1, int N1, int M2, int N2> void MatrixMultiply(const T* a, const T* b, T* c)
-{
-    for (int i = 0; i < M1; ++i)
-    {
-        for (int j = 0; j < N2; ++j)
-        {
-            c[i * N2 + j] = T(0);
-            for (int k = 0; k < N1; ++k)
-            {
-                c[i * N2 + j] += a[i * N1 + k] * b[k * N2 + j];
-            }
+// -----------------------------------------------------------------
+// Зона покрытия
+// -----------------------------------------------------------------
+class CoverageZone {
+public:
+    static constexpr double EARTH_RADIUS = 6371000.0;
+    static std::vector<Vector3> computeBoundary(const Vector3& satPos, int seg = 64) {
+        std::vector<Vector3> boundary;
+        double R = EARTH_RADIUS, r = satPos.length();
+        if (r <= R) return boundary;
+        double theta = acos(R / r);
+        Vector3 dir = satPos.normalize();
+        Vector3 u = (fabs(dir.x()) < 0.9) ? Vector3(1, 0, 0) : Vector3(0, 1, 0);
+        Vector3 v = (dir ^ u).normalize();
+        Vector3 w = (v ^ dir).normalize();
+        for (int i = 0; i <= seg; ++i) {
+            double az = 2.0 * M_PI * i / seg;
+            Vector3 perp = v * cos(az) + w * sin(az);
+            Vector3 bdir = dir * cos(theta) + perp * sin(theta);
+            boundary.push_back(bdir * R);
+        }
+        return boundary;
+    }
+    static void drawWireframe(const std::vector<Vector3>& boundary, const Vector3& satPosScaled) {
+        if (boundary.empty()) return;
+        glDisable(GL_LIGHTING);
+        glColor3f(0, 1, 0);
+        glLineWidth(2);
+        glBegin(GL_LINE_LOOP);
+        for (auto& p : boundary)
+            glVertex3d(p.x() / 1e5, p.y() / 1e5, p.z() / 1e5);
+        glEnd();
+        glBegin(GL_LINES);
+        for (auto& p : boundary) {
+            glVertex3d(satPosScaled.x(), satPosScaled.y(), satPosScaled.z());
+            glVertex3d(p.x() / 1e5, p.y() / 1e5, p.z() / 1e5);
+        }
+        glEnd();
+        glEnable(GL_LIGHTING);
+    }
+};
+
+// -----------------------------------------------------------------
+// Спутник
+// -----------------------------------------------------------------
+class Satellite {
+public:
+    Orbit orbit;
+    ObjModel model;
+    bool isVisible;
+    Vector3 cachedPos;
+    Satellite(const Orbit& orb) : orbit(orb), isVisible(true) {}
+    void loadModel(const std::string& fname) { model.LoadModel(fname.c_str()); }
+    void update(double dt) {
+        orbit.advanceTime(dt);
+        cachedPos = orbit.toEci();
+    }
+    void draw(double scale = 0.5) {
+        if (!isVisible) return;
+        glPushMatrix();
+        glTranslated(cachedPos.x() / 1e5, cachedPos.y() / 1e5, cachedPos.z() / 1e5);
+        glScaled(scale, scale, scale);
+        model.Draw();
+        glPopMatrix();
+    }
+    Vector3 getScaledPosition() const {
+        return Vector3(cachedPos.x() / 1e5, cachedPos.y() / 1e5, cachedPos.z() / 1e5);
+    }
+};
+
+// -----------------------------------------------------------------
+// Отрисовщик Земли
+// -----------------------------------------------------------------
+class EarthRenderer {
+    GLuint dayTex = 0, nightTex = 0, normalTex = 0;
+    GLUquadric* quad = nullptr;
+public:
+    EarthRenderer() {
+        quad = gluNewQuadric();
+        gluQuadricTexture(quad, GL_TRUE);
+        gluQuadricNormals(quad, GLU_SMOOTH);
+    }
+    ~EarthRenderer() { if (quad) gluDeleteQuadric(quad); }
+    void loadDayTexture(const std::string& fname) {
+        Texture t; t.LoadTexture(fname); dayTex = t.getTexId();
+    }
+    void loadNightTexture(const std::string& fname) {
+        Texture t; t.LoadTexture(fname); nightTex = t.getTexId();
+    }
+    void loadNormalTexture(const std::string& fname) {
+        Texture t; t.LoadTexture(fname); normalTex = t.getTexId();
+    }
+    void drawRaw() {
+        gluSphere(quad, 6371000.0 / 1e5, 128, 128);
+    }
+    GLuint getDayTextureId() const { return dayTex; }
+    GLuint getNightTextureId() const { return nightTex; }
+    GLuint getNormalTextureId() const { return normalTex; }
+};
+
+// -----------------------------------------------------------------
+// UI с параметрами орбиты
+// -----------------------------------------------------------------
+class OrbitUI {
+    GuiTextRectangle panel;
+    bool show;
+public:
+    OrbitUI() : show(true) { panel.setSize(480, 340); }
+    void update(const Orbit& o, double dt, double totalTime) {
+        if (!show) return;
+        std::wstringstream ss;
+        ss << std::fixed << std::setprecision(2);
+        ss << L"=== Orbital Parameters ===\n";
+        ss << L"a: " << o.a / 1000.0 << L" km\n";
+        ss << L"e: " << o.e << L"\n";
+        ss << L"i: " << o.i * 180.0 / M_PI << L" deg\n";
+        ss << L"\x03a9: " << o.Omega * 180.0 / M_PI << L" deg\n";
+        ss << L"\x03c9: " << o.omega * 180.0 / M_PI << L" deg\n";
+        ss << L"\x03bd: " << o.nu * 180.0 / M_PI << L" deg\n";
+        ss << L"Radius: " << o.radius() / 1000.0 << L" km\n";
+        ss << L"Speed: " << o.speed() / 1000.0 << L" km/s\n";
+        ss << L"Period: " << o.period() / 60.0 << L" min\n";
+        ss << L"Time: " << totalTime << L" s\n";
+        ss << L"\nUp/Dn: a   Left/Right: e\n";
+        ss << L"+/-: i   [/]: \x03a9   ;/': \x03c9   9/0: \x03bd\n";
+        ss << L"U - toggle UI   C - coverage\n";
+        panel.setText(ss.str().c_str(), 255, 255, 255);
+    }
+    void draw(int w, int h) {
+        if (show) {
+            panel.setPosition(10, h - panel.getHeight() - 10);
+            panel.Draw();
         }
     }
+    void toggle() { show = !show; }
+};
+
+// -----------------------------------------------------------------
+// Глобальные переменные
+// -----------------------------------------------------------------
+bool texturing = true, lightning = true, alpha = false;
+Orbit currentOrbit(7e6, 0.1, 0.2, 0.5, 0.3, 0.0);
+Satellite sat(currentOrbit);
+EarthRenderer earth;
+OrbitUI ui;
+double simTime = 0.0;
+bool showCoverage = true;
+
+// -----------------------------------------------------------------
+// Обработчики клавиш
+// -----------------------------------------------------------------
+void switchModes(OpenGL* sender, KeyEventArg arg) {
+    char key = LOWORD(MapVirtualKeyA(arg.key, MAPVK_VK_TO_CHAR));
+    switch (key) {
+    case 'L': lightning = !lightning; break;
+    case 'T': texturing = !texturing; break;
+    case 'A': alpha = !alpha; break;
+    }
 }
 
-// Текстовый прямоугольник в верхнем правом углу.
-// OGL не предоставляет возможности для хранения текста;
-// внутри этого класса создается картинка с текстом (через GDI),
-// в виде текстуры накладывается на прямоугольник и рисуется на экране.
-// Это самый простой, но очень неэффективный способ написать что-либо на экране.
-GuiTextRectangle text;
+void handleOrbitInput(OpenGL* sender, KeyEventArg arg) {
+    char key = LOWORD(MapVirtualKeyA(arg.key, MAPVK_VK_TO_CHAR));
+    double step_a = 1e5, step_e = 0.01, step_i = 0.05;
+    double step_O = 0.1, step_w = 0.1, step_n = 0.1;
+    switch (key) {
+    case 0x26: currentOrbit.a += step_a; break;
+    case 0x28: currentOrbit.a = MAX(6.5e6, currentOrbit.a - step_a); break;
+    case 0x25: currentOrbit.e = MAX(0.0, currentOrbit.e - step_e); break;
+    case 0x27: currentOrbit.e = MIN(0.99, currentOrbit.e + step_e); break;
+    case '+': case '=': currentOrbit.i = MIN(M_PI, currentOrbit.i + step_i); break;
+    case '-': currentOrbit.i = MAX(0.0, currentOrbit.i - step_i); break;
+    case '[': currentOrbit.Omega += step_O; break;
+    case ']': currentOrbit.Omega -= step_O; break;
+    case ';': currentOrbit.omega += step_w; break;
+    case '\'': currentOrbit.omega -= step_w; break;
+    case '9': currentOrbit.nu += step_n; break;
+    case '0': currentOrbit.nu -= step_n; break;
+    case 'u': ui.toggle(); break;
+    case 'c': showCoverage = !showCoverage; break;
+    }
+    sat.orbit = currentOrbit;
+}
 
-// ID для текстуры
-GLuint texId;
+// -----------------------------------------------------------------
+// Инициализация
+// -----------------------------------------------------------------
+void initRender() {
+    initShadersFunctions();
 
-ObjModel f;
+    earthShader.VshaderFileName = "shaders/earth.vert";
+    earthShader.FshaderFileName = "shaders/earth.frag";
+    earthShader.LoadShaderFromFile();
+    earthShader.Compile();
 
-Shader cassini_sh;
-Shader phong_sh;
-Shader vb_sh;
-Shader simple_texture_sh;
+    earth.loadDayTexture("textures/earth_day.jpg");
+    earth.loadNightTexture("textures/earth_night.jpg");
 
-Texture stankin_tex, vb_tex, monkey_tex;
+    sat.loadModel("models/satellite.obj");
+    sat.orbit = currentOrbit;
 
-// Выполняется один раз перед первым рендером
-void initRender()
-{
-    // Настройка шейдеров
-    cassini_sh.VshaderFileName = "shaders/v.vert";
-    cassini_sh.FshaderFileName = "shaders/cassini.frag";
-    cassini_sh.LoadShaderFromFile();
-    cassini_sh.Compile();
-
-    phong_sh.VshaderFileName = "shaders/v.vert";
-    phong_sh.FshaderFileName = "shaders/light.frag";
-    phong_sh.LoadShaderFromFile();
-    phong_sh.Compile();
-
-    vb_sh.VshaderFileName = "shaders/v.vert";
-    vb_sh.FshaderFileName = "shaders/vb.frag";
-    vb_sh.LoadShaderFromFile();
-    vb_sh.Compile();
-
-    simple_texture_sh.VshaderFileName = "shaders/v.vert";
-    simple_texture_sh.FshaderFileName = "shaders/textureShader.frag";
-    simple_texture_sh.LoadShaderFromFile();
-    simple_texture_sh.Compile();
-
-    stankin_tex.LoadTexture("textures/stankin.png");
-    vb_tex.LoadTexture("textures/vb.png");
-    monkey_tex.LoadTexture("textures/monkey.png");
-
-    f.LoadModel("models//monkey.obj_m");
-    //==============НАСТРОЙКА ТЕКСТУР================
-    // 4 байта на хранение пикселя
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-
-    //================НАСТРОЙКА КАМЕРЫ======================
-    camera.caclulateCameraPos();
-
-    // привязываем камеру к событиям "движка"
-    gl.WheelEvent.reaction(&camera, &Camera::Zoom);
-    gl.MouseMovieEvent.reaction(&camera, &Camera::MouseMovie);
-    gl.MouseLeaveEvent.reaction(&camera, &Camera::MouseLeave);
-    gl.MouseLdownEvent.reaction(&camera, &Camera::MouseStartDrag);
-    gl.MouseLupEvent.reaction(&camera, &Camera::MouseStopDrag);
-    //==============НАСТРОЙКА СВЕТА===========================
-    // Привязываем свет к событиям "движка"
-    gl.MouseMovieEvent.reaction(&light, &Light::MoveLight);
-    gl.KeyDownEvent.reaction(&light, &Light::StartDrug);
-    gl.KeyUpEvent.reaction(&light, &Light::StopDrug);
-    //========================================================
-    //====================Прочее==============================
+    // Реакции на события через лямбды (работает без std::bind)
+    gl.KeyDownEvent.reaction(handleOrbitInput);
     gl.KeyDownEvent.reaction(switchModes);
-    text.setSize(512, 180);
-    //========================================================
+
+    gl.WheelEvent.reaction([&](OpenGL* sender, MouseWheelEventArg arg) { camera.Zoom(sender, arg); });
+    gl.MouseMovieEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { camera.MouseMovie(sender, arg); });
+    gl.MouseLeaveEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { camera.MouseLeave(sender, arg); });
+    gl.MouseLdownEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { camera.MouseStartDrag(sender, arg); });
+    gl.MouseLupEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { camera.MouseStopDrag(sender, arg); });
+
+    gl.MouseMovieEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { light.MoveLight(sender, arg); });
+    gl.KeyDownEvent.reaction([&](OpenGL* sender, KeyEventArg arg) { light.StartDrug(sender, arg); });
+    gl.KeyUpEvent.reaction([&](OpenGL* sender, KeyEventArg arg) { light.StopDrug(sender, arg); });
 
     camera.setPosition(2, 1.5, 1.5);
+    camera.caclulateCameraPos();
 }
 
-float view_matrix[16];
-double full_time = 0;
-int location = 0;
+// -----------------------------------------------------------------
+// Основной рендер
+// -----------------------------------------------------------------
+void Render(double delta_time) {
+    simTime += delta_time;
+    sat.update(delta_time);
 
-void Render(double delta_time)
-{
-    full_time += delta_time;
-
-    // Настройка камеры и света
-    if (gl.isKeyPressed('F')) // если нажата F - свет из камеры
-    {
+    if (gl.isKeyPressed('F'))
         light.SetPosition(camera.x(), camera.y(), camera.z());
-    }
     camera.SetUpCamera();
-    // Забираем матрицу MODELVIEW сразу после установки камеры,
-    // так как в ней отсутствуют трансформации glRotate
-    glGetFloatv(GL_MODELVIEW_MATRIX, view_matrix);
-
     light.SetUpLight();
-
-    // Рисуем оси
     gl.DrawAxes();
 
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // Включаем нормализацию нормалей
-    // чтобы glScaled не влияли на них.
-
-    glEnable(GL_NORMALIZE);
-    glDisable(GL_LIGHTING);
-    glDisable(GL_TEXTURE_2D);
-    glDisable(GL_BLEND);
-
-    // Переключаем режимы (см void switchModes(OpenGL *sender, KeyEventArg arg))
-    if (lightning)
-        glEnable(GL_LIGHTING);
-    if (texturing)
-    {
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, 0); // Сбрасываем текущую текстуру
-    }
-
-    if (alpha)
-    {
+    if (lightning) glEnable(GL_LIGHTING);
+    else glDisable(GL_LIGHTING);
+    if (texturing) glEnable(GL_TEXTURE_2D);
+    else glDisable(GL_TEXTURE_2D);
+    if (alpha) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
+    else {
+        glDisable(GL_BLEND);
+    }
+    glEnable(GL_NORMALIZE);
 
-    //=============НАСТРОЙКА МАТЕРИАЛА==============
-
-    // Настройка материала, все что рисуется ниже будет иметь этот материал.
-    // Массивы с настройками материала
-    float amb[] = {0.2, 0.2, 0.1, 1.};
-    float dif[] = {0.4, 0.65, 0.5, 1.};
-    float spec[] = {0.9, 0.8, 0.3, 1.};
-    float sh = 0.2f * 256;
-
-    // Фоновая
-    glMaterialfv(GL_FRONT, GL_AMBIENT, amb);
-    // Дифузная
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, dif);
-    // Зеркальная
-    glMaterialfv(GL_FRONT, GL_SPECULAR, spec);
-    // Размер блика
-    glMaterialf(GL_FRONT, GL_SHININESS, sh);
-
-    // Сглаживание освещения
-    glShadeModel(GL_SMOOTH); // закраска по Гуро
-                             //(GL_SMOOTH - плоская закраска)
-
-    //============ РИСОВАТЬ ТУТ ==============
-
-    // Квадратик станкина
-
-    // Рисуем квадратик с овалом Кассини!
-
-    cassini_sh.UseShader();
-
-    location = glGetUniformLocationARB(cassini_sh.program, "Time");
-    glUniform1fARB(location, full_time);
-    location = glGetUniformLocationARB(cassini_sh.program, "size");
-    glUniform2fARB(location, 100, 100);
-
-    glPushMatrix();
-
-    glTranslated(0, -1.2, 0);
-
-    glBegin(GL_QUADS);
-    glNormal3d(0, 0, 1);
-    glTexCoord2d(1, 1);
-    glVertex3d(0.5, 0.5, 0);
-    glTexCoord2d(1, 0);
-    glVertex3d(0.5, -0.5, 0);
-    glTexCoord2d(0, 0);
-    glVertex3d(-0.5, -0.5, 0);
-    glTexCoord2d(0, 1);
-    glVertex3d(-0.5, 0.5, 0);
-    glEnd();
-
-    glPopMatrix();
-
-    // Квадратик с освещением
-    phong_sh.UseShader();
-
-    float light_pos[4] = {light.x(), light.y(), light.z(), 1};
-    float light_pos_v[4];
-
-    // переносим координаты света в видовые координаты
-    MatrixMultiply<float, 1, 4, 4, 4>(light_pos, view_matrix, light_pos_v);
-
-    location = glGetUniformLocationARB(phong_sh.program, "Ia");
-    glUniform3fARB(location, 1, 1, 1);
-    location = glGetUniformLocationARB(phong_sh.program, "Id");
-    glUniform3fARB(location, 1, 1, 1);
-    location = glGetUniformLocationARB(phong_sh.program, "Is");
-    glUniform3fARB(location, 1, 1, 1);
-
-    location = glGetUniformLocationARB(phong_sh.program, "ma");
-    glUniform3fARB(location, 0.1, 0.1, 0.1);
-    location = glGetUniformLocationARB(phong_sh.program, "md");
-    glUniform3fARB(location, 0.6, 0.6, 0.6);
-    location = glGetUniformLocationARB(phong_sh.program, "ms");
-    glUniform4fARB(location, 0, 1, 0, 300);
-
-    location = glGetUniformLocationARB(phong_sh.program, "light_pos_v");
-    glUniform3fvARB(location, 1, light_pos_v);
-
-    glPushMatrix();
-
-    glTranslated(0, 0, 0);
-
-    glBegin(GL_QUADS);
-    glNormal3d(0, 0, 1);
-    glTexCoord2d(1, 1);
-    glVertex3d(0.5, 0.5, 0);
-    glTexCoord2d(1, 0);
-    glVertex3d(0.5, -0.5, 0);
-    glTexCoord2d(0, 0);
-    glVertex3d(-0.5, -0.5, 0);
-    glTexCoord2d(0, 1);
-    glVertex3d(-0.5, 0.5, 0);
-    glEnd();
-
-    glPopMatrix();
-
-    // Квадратик без освещения
-
-    Shader::DontUseShaders();
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    glPushMatrix();
-
-    glTranslated(1.2, 0, 0);
-
-    glBegin(GL_QUADS);
-    glNormal3d(0, 0, 1);
-    glTexCoord2d(1, 1);
-    glVertex3d(0.5, 0.5, 0);
-    glTexCoord2d(1, 0);
-    glVertex3d(0.5, -0.5, 0);
-    glTexCoord2d(0, 0);
-    glVertex3d(-0.5, -0.5, 0);
-    glTexCoord2d(0, 1);
-    glVertex3d(-0.5, 0.5, 0);
-    glEnd();
-
-    glPopMatrix();
-
-    // Квадратик с ВБ
-
-    vb_sh.UseShader();
+    // Земля со шейдером
+    earthShader.UseShader();
 
     glActiveTexture(GL_TEXTURE0);
-    stankin_tex.Bind();
+    glBindTexture(GL_TEXTURE_2D, earth.getDayTextureId());
+    glUniform1iARB(glGetUniformLocationARB(earthShader.program, "dayTexture"), 0);
+
     glActiveTexture(GL_TEXTURE1);
-    vb_tex.Bind();
+    glBindTexture(GL_TEXTURE_2D, earth.getNightTextureId());
+    glUniform1iARB(glGetUniformLocationARB(earthShader.program, "nightTexture"), 1);
 
-    location = glGetUniformLocationARB(vb_sh.program, "time");
-    glUniform1fARB(location, full_time);
-    location = glGetUniformLocationARB(vb_sh.program, "tex_stankin");
-    glUniform1iARB(location, 0);
-    location = glGetUniformLocationARB(vb_sh.program, "tex_vb");
-    glUniform1iARB(location, 1);
+    if (earth.getNormalTextureId()) {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, earth.getNormalTextureId());
+        glUniform1iARB(glGetUniformLocationARB(earthShader.program, "normalMap"), 2);
+    }
+
+    glUniform3fARB(glGetUniformLocationARB(earthShader.program, "lightDir"), 1.0f, 1.0f, 0.5f);
+    glUniform3fARB(glGetUniformLocationARB(earthShader.program, "viewPos"),
+        (float)camera.x(), (float)camera.y(), (float)camera.z());
+    glUniform1fARB(glGetUniformLocationARB(earthShader.program, "time"), (float)simTime);
+
+    float model[16], view[16], proj[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, model);
+    glGetFloatv(GL_MODELVIEW_MATRIX, view);
+    glGetFloatv(GL_PROJECTION_MATRIX, proj);
+    glUniformMatrix4fv(glGetUniformLocationARB(earthShader.program, "model"), 1, GL_FALSE, model);
+    glUniformMatrix4fv(glGetUniformLocationARB(earthShader.program, "view"), 1, GL_FALSE, view);
+    glUniformMatrix4fv(glGetUniformLocationARB(earthShader.program, "projection"), 1, GL_FALSE, proj);
 
     glPushMatrix();
-
-    glTranslated(0, 1.2, 0);
-    glBegin(GL_QUADS);
-    glNormal3d(0, 0, 1);
-    glTexCoord2d(1, 1);
-    glVertex3d(0.5, 0.5, 0);
-    glTexCoord2d(1, 0);
-    glVertex3d(0.5, -0.5, 0);
-    glTexCoord2d(0, 0);
-    glVertex3d(-0.5, -0.5, 0);
-    glTexCoord2d(0, 1);
-    glVertex3d(-0.5, 0.5, 0);
-    glEnd();
-
+    glScaled(1e-5, 1e-5, 1e-5);
+    earth.drawRaw();
     glPopMatrix();
 
-    // Обезьянка без шейдеров
-    glPushMatrix();
     Shader::DontUseShaders();
-    glActiveTexture(GL_TEXTURE0);
-    monkey_tex.Bind();
-    glShadeModel(GL_SMOOTH);
-    glTranslated(-1, 0, 0.5);
-    glScaled(0.1, 0.1, 0.1);
-    glRotated(180, 0, 0, 1);
-    f.Draw();
-    glPopMatrix();
 
-    // Обезьянка с шейдерами
-    simple_texture_sh.UseShader();
-    location = glGetUniformLocationARB(simple_texture_sh.program, "tex");
-    glUniform1iARB(location, 0);
-    glActiveTexture(GL_TEXTURE0);
-    monkey_tex.Bind();
+    // Спутник и зона покрытия
+    sat.draw(0.5);
+    if (showCoverage) {
+        auto boundary = CoverageZone::computeBoundary(sat.cachedPos, 128);
+        CoverageZone::drawWireframe(boundary, sat.getScaledPosition());
+    }
 
-    glPushMatrix();
-    glTranslated(-1, 1, 0.5);
-    glScaled(0.1, 0.1, 0.1);
-    glRotated(180, 0, 0, 1);
-    f.Draw();
-    glPopMatrix();
-
-    //===============================================
-
-    // Сбрасываем все трансформации
-    glLoadIdentity();
-    camera.SetUpCamera();
-    Shader::DontUseShaders();
-    // Рисуем источник света
     light.DrawLightGizmo();
 
-    //================Сообщение в верхнем левом углу=======================
-    glActiveTexture(GL_TEXTURE0);
-    // Переключаемся на матрицу проекции
+    // 2D UI
     glMatrixMode(GL_PROJECTION);
-    // Сохраняем текущую матрицу проекции с перспективным преобразованием
     glPushMatrix();
-    // Загружаем единичную матрицу в матрицу проекции
     glLoadIdentity();
-
-    // Устанавливаем матрицу параллельной проекции
     glOrtho(0, gl.getWidth() - 1, 0, gl.getHeight() - 1, 0, 1);
-
-    // Переключаемся на матрицу MODELVIEW
     glMatrixMode(GL_MODELVIEW);
-    // Сохраняем матрицу
     glPushMatrix();
-    // Сбрасываем все трансформации и настройки камеры загрузкой единичной матрицы
     glLoadIdentity();
-
-    // Нарисованное тут находится в 2D системе координат
-    // Нижний левый угол окна - точка (0,0)
-    // Верхний правый угол (ширина_окна - 1, высота_окна - 1)
-
-    std::wstringstream ss;
-    ss << std::fixed << std::setprecision(3) << "T - " << (texturing ? L"[вкл]выкл" : L"вкл[выкл]") << L" текстур\n"
-       << "L - " << (lightning ? L"[вкл]выкл" : L"вкл[выкл]") << L" освещение\n"
-       << "A - " << (alpha ? L"[вкл]выкл" : L"вкл[выкл]") << L" альфа-наложение\n"
-       << L"F - переместить свет в позицию камеры\n"
-       << L"G - двигать свет по горизонтали\n"
-       << L"G+ЛКМ - двигать свет по вертикали\n"
-       << L"Координаты света: (" << std::setw(7) << light.x() << "," << std::setw(7) << light.y() << "," << std::setw(7)
-       << light.z() << ")\n"
-       << L"Координаты камеры: (" << std::setw(7) << camera.x() << "," << std::setw(7) << camera.y() << ","
-       << std::setw(7) << camera.z() << ")\n"
-       << L"Параметры камеры: R=" << std::setw(7) << camera.distance() << ", fi1=" << std::setw(7) << camera.fi1()
-       << ", fi2=" << std::setw(7) << camera.fi2() << '\n'
-       << L"delta_time: " << std::setprecision(5) << delta_time << '\n'
-       << L"full_time: " << std::setprecision(2) << full_time << std::endl;
-
-    text.setPosition(10, gl.getHeight() - 10 - 180);
-    text.setText(ss.str().c_str());
-    text.Draw();
-
-    // Восстанавливаем матрицу проекции на перспективу, которую сохраняли ранее.
+    ui.update(currentOrbit, delta_time, simTime);
+    ui.draw(gl.getWidth(), gl.getHeight());
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);

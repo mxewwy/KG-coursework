@@ -161,6 +161,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\cassini.frag" />
+    <None Include="shaders\earth.frag" />
+    <None Include="shaders\earth.vert" />
     <None Include="shaders\f.frag" />
     <None Include="shaders\frac.frag" />
     <None Include="shaders\f_gui.frag" />
