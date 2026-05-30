@@ -33,8 +33,11 @@ extern OpenGL gl;
 #include "Camera.h"
 #include "Vector3.h"
 
+Light light;
+Camera camera;
+
 // -----------------------------------------------------------------
-// Глобальный шейдер для Земли
+// Шейдер для Земли (пока не используется)
 // -----------------------------------------------------------------
 Shader earthShader;
 
@@ -158,10 +161,9 @@ public:
 };
 
 // -----------------------------------------------------------------
-// Отрисовщик Земли
+// Отрисовщик Земли (без шейдера, синяя)
 // -----------------------------------------------------------------
 class EarthRenderer {
-    GLuint dayTex = 0, nightTex = 0, normalTex = 0;
     GLUquadric* quad = nullptr;
 public:
     EarthRenderer() {
@@ -170,25 +172,13 @@ public:
         gluQuadricNormals(quad, GLU_SMOOTH);
     }
     ~EarthRenderer() { if (quad) gluDeleteQuadric(quad); }
-    void loadDayTexture(const std::string& fname) {
-        Texture t; t.LoadTexture(fname); dayTex = t.getTexId();
-    }
-    void loadNightTexture(const std::string& fname) {
-        Texture t; t.LoadTexture(fname); nightTex = t.getTexId();
-    }
-    void loadNormalTexture(const std::string& fname) {
-        Texture t; t.LoadTexture(fname); normalTex = t.getTexId();
-    }
     void drawRaw() {
-        gluSphere(quad, 6371000.0 / 1e5, 128, 128);
+        gluSphere(quad, 5.0, 128, 128);
     }
-    GLuint getDayTextureId() const { return dayTex; }
-    GLuint getNightTextureId() const { return nightTex; }
-    GLuint getNormalTextureId() const { return normalTex; }
 };
 
 // -----------------------------------------------------------------
-// UI с параметрами орбиты
+// UI с параметрами орбиты (временно отключён)
 // -----------------------------------------------------------------
 class OrbitUI {
     GuiTextRectangle panel;
@@ -248,24 +238,36 @@ void switchModes(OpenGL* sender, KeyEventArg arg) {
 }
 
 void handleOrbitInput(OpenGL* sender, KeyEventArg arg) {
-    char key = LOWORD(MapVirtualKeyA(arg.key, MAPVK_VK_TO_CHAR));
+    int key = arg.key;
     double step_a = 1e5, step_e = 0.01, step_i = 0.05;
     double step_O = 0.1, step_w = 0.1, step_n = 0.1;
-    switch (key) {
-    case 0x26: currentOrbit.a += step_a; break;
-    case 0x28: currentOrbit.a = MAX(6.5e6, currentOrbit.a - step_a); break;
-    case 0x25: currentOrbit.e = MAX(0.0, currentOrbit.e - step_e); break;
-    case 0x27: currentOrbit.e = MIN(0.99, currentOrbit.e + step_e); break;
-    case '+': case '=': currentOrbit.i = MIN(M_PI, currentOrbit.i + step_i); break;
-    case '-': currentOrbit.i = MAX(0.0, currentOrbit.i - step_i); break;
-    case '[': currentOrbit.Omega += step_O; break;
-    case ']': currentOrbit.Omega -= step_O; break;
-    case ';': currentOrbit.omega += step_w; break;
-    case '\'': currentOrbit.omega -= step_w; break;
-    case '9': currentOrbit.nu += step_n; break;
-    case '0': currentOrbit.nu -= step_n; break;
-    case 'u': ui.toggle(); break;
-    case 'c': showCoverage = !showCoverage; break;
+
+    if (key == VK_UP) {
+        currentOrbit.a += step_a;
+    }
+    else if (key == VK_DOWN) {
+        currentOrbit.a = MAX(6.5e6, currentOrbit.a - step_a);
+    }
+    else if (key == VK_LEFT) {
+        currentOrbit.e = MAX(0.0, currentOrbit.e - step_e);
+    }
+    else if (key == VK_RIGHT) {
+        currentOrbit.e = MIN(0.99, currentOrbit.e + step_e);
+    }
+    else {
+        char ch = LOWORD(MapVirtualKeyA(key, MAPVK_VK_TO_CHAR));
+        switch (ch) {
+        case '+': case '=': currentOrbit.i = MIN(M_PI, currentOrbit.i + step_i); break;
+        case '-': currentOrbit.i = MAX(0.0, currentOrbit.i - step_i); break;
+        case '[': currentOrbit.Omega += step_O; break;
+        case ']': currentOrbit.Omega -= step_O; break;
+        case ';': currentOrbit.omega += step_w; break;
+        case '\'': currentOrbit.omega -= step_w; break;
+        case '9': currentOrbit.nu += step_n; break;
+        case '0': currentOrbit.nu -= step_n; break;
+        case 'u': ui.toggle(); break;
+        case 'c': showCoverage = !showCoverage; break;
+        }
     }
     sat.orbit = currentOrbit;
 }
@@ -276,18 +278,15 @@ void handleOrbitInput(OpenGL* sender, KeyEventArg arg) {
 void initRender() {
     initShadersFunctions();
 
-    earthShader.VshaderFileName = "shaders/earth.vert";
-    earthShader.FshaderFileName = "shaders/earth.frag";
-    earthShader.LoadShaderFromFile();
-    earthShader.Compile();
-
-    earth.loadDayTexture("textures/earth_day.jpg");
-    earth.loadNightTexture("textures/earth_night.jpg");
+    // // Загрузка шейдеров (пока закомментировано)
+    // earthShader.VshaderFileName = "shaders/earth.vert";
+    // earthShader.FshaderFileName = "shaders/earth.frag";
+    // earthShader.LoadShaderFromFile();
+    // earthShader.Compile();
 
     sat.loadModel("models/satellite.obj");
     sat.orbit = currentOrbit;
 
-    // Реакции на события через лямбды (работает без std::bind)
     gl.KeyDownEvent.reaction(handleOrbitInput);
     gl.KeyDownEvent.reaction(switchModes);
 
@@ -301,7 +300,7 @@ void initRender() {
     gl.KeyDownEvent.reaction([&](OpenGL* sender, KeyEventArg arg) { light.StartDrug(sender, arg); });
     gl.KeyUpEvent.reaction([&](OpenGL* sender, KeyEventArg arg) { light.StopDrug(sender, arg); });
 
-    camera.setPosition(2, 1.5, 1.5);
+    camera.setPosition(0, 0, 50);
     camera.caclulateCameraPos();
 }
 
@@ -331,45 +330,16 @@ void Render(double delta_time) {
     }
     glEnable(GL_NORMALIZE);
 
-    // Земля со шейдером
-    earthShader.UseShader();
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, earth.getDayTextureId());
-    glUniform1iARB(glGetUniformLocationARB(earthShader.program, "dayTexture"), 0);
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, earth.getNightTextureId());
-    glUniform1iARB(glGetUniformLocationARB(earthShader.program, "nightTexture"), 1);
-
-    if (earth.getNormalTextureId()) {
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, earth.getNormalTextureId());
-        glUniform1iARB(glGetUniformLocationARB(earthShader.program, "normalMap"), 2);
-    }
-
-    glUniform3fARB(glGetUniformLocationARB(earthShader.program, "lightDir"), 1.0f, 1.0f, 0.5f);
-    glUniform3fARB(glGetUniformLocationARB(earthShader.program, "viewPos"),
-        (float)camera.x(), (float)camera.y(), (float)camera.z());
-    glUniform1fARB(glGetUniformLocationARB(earthShader.program, "time"), (float)simTime);
-
-    float model[16], view[16], proj[16];
-    glGetFloatv(GL_MODELVIEW_MATRIX, model);
-    glGetFloatv(GL_MODELVIEW_MATRIX, view);
-    glGetFloatv(GL_PROJECTION_MATRIX, proj);
-    glUniformMatrix4fv(glGetUniformLocationARB(earthShader.program, "model"), 1, GL_FALSE, model);
-    glUniformMatrix4fv(glGetUniformLocationARB(earthShader.program, "view"), 1, GL_FALSE, view);
-    glUniformMatrix4fv(glGetUniformLocationARB(earthShader.program, "projection"), 1, GL_FALSE, proj);
-
-    glPushMatrix();
-    glScaled(1e-5, 1e-5, 1e-5);
+    // Рисуем Землю синим цветом (без шейдера)
+    glDisable(GL_TEXTURE_2D);
+    glColor3f(0.2f, 0.3f, 0.8f);
     earth.drawRaw();
-    glPopMatrix();
 
-    Shader::DontUseShaders();
-
-    // Спутник и зона покрытия
+    // Спутник
+    glColor3f(0.8f, 0.8f, 0.8f);
     sat.draw(0.5);
+
+    // Зона покрытия
     if (showCoverage) {
         auto boundary = CoverageZone::computeBoundary(sat.cachedPos, 128);
         CoverageZone::drawWireframe(boundary, sat.getScaledPosition());
@@ -377,7 +347,8 @@ void Render(double delta_time) {
 
     light.DrawLightGizmo();
 
-    // 2D UI
+    // 2D UI (отключён)
+    /*
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -391,4 +362,5 @@ void Render(double delta_time) {
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
+    */
 }

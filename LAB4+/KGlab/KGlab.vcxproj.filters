@@ -46,7 +46,7 @@
       <Filter>Исходные файлы</Filter>
     </ClCompile>
     <ClCompile Include="debout.cpp">
-      <Filter>Файлы заголовков</Filter>
+      <Filter>Исходные файлы</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -68,9 +68,6 @@
     <ClInclude Include="Light.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
-    <ClInclude Include="Camera.h">
-      <Filter>Исходные файлы</Filter>
-    </ClInclude>
     <ClInclude Include="ObjLoader.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
@@ -81,6 +78,12 @@
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
     <ClInclude Include="debout.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Camera.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector3.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
   </ItemGroup>

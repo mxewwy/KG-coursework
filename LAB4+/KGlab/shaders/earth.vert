@@ -8,14 +8,11 @@ varying vec2 TexCoord;
 varying vec3 Normal;
 varying vec3 FragPos;
 
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
-
 void main() {
     TexCoord = aTexCoord;
-    // Преобразуем нормаль в мировое пространство (без учёта масштаба)
-    Normal = mat3(transpose(inverse(model))) * aNormal;
-    FragPos = vec3(model * vec4(aPos, 1.0));
-    gl_Position = projection * view * model * vec4(aPos, 1.0);
+    // Преобразуем нормаль в видовое пространство
+    Normal = gl_NormalMatrix * aNormal;
+    vec4 pos = gl_ModelViewMatrix * vec4(aPos, 1.0);
+    FragPos = pos.xyz;
+    gl_Position = gl_ProjectionMatrix * pos;
 }

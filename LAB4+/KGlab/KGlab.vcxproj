@@ -158,6 +158,7 @@
     <ClInclude Include="Render.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="Texture.h" />
+    <ClInclude Include="Vector3.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\cassini.frag" />
