@@ -118,6 +118,12 @@
     <None Include="shaders\earth.vert">
       <Filter>shaders</Filter>
     </None>
+    <None Include="shaders\background.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\background.vert">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="shaders\f_frac.txt">

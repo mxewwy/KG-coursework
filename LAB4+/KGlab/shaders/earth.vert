@@ -1,18 +1,8 @@
 #version 120
-
-attribute vec3 aPos;
-attribute vec2 aTexCoord;
-attribute vec3 aNormal;
-
-varying vec2 TexCoord;
-varying vec3 Normal;
-varying vec3 FragPos;
-
+varying vec2 v_texCoord;
+varying vec3 v_normalWorld;
 void main() {
-    TexCoord = aTexCoord;
-    // ѕреобразуем нормаль в видовое пространство
-    Normal = gl_NormalMatrix * aNormal;
-    vec4 pos = gl_ModelViewMatrix * vec4(aPos, 1.0);
-    FragPos = pos.xyz;
-    gl_Position = gl_ProjectionMatrix * pos;
+    v_texCoord = gl_MultiTexCoord0.xy;
+    v_normalWorld = normalize(gl_Normal);
+    gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
 }

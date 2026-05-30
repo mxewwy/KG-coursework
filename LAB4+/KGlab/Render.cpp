@@ -1,19 +1,19 @@
 ﻿#include "Render.h"
-#include "GUItextRectangle.h"
 #include "MyShaders.h"
 #include "ObjLoader.h"
 #include "Texture.h"
-
-#define _USE_MATH_DEFINES
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "GUItextRectangle.h"
 
 #ifndef MAX
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 #ifndef MIN
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#define _USE_MATH_DEFINES
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
 #endif
 
 #include <windows.h>
@@ -27,19 +27,28 @@
 
 #include "debout.h"
 #include "MyOGL.h"
-
-extern OpenGL gl;
 #include "Light.h"
 #include "Camera.h"
 #include "Vector3.h"
 
+extern OpenGL gl;
 Light light;
 Camera camera;
 
 // -----------------------------------------------------------------
-// Шейдер для Земли (пока не используется)
+// Ресурсы для Земли
 // -----------------------------------------------------------------
 Shader earthShader;
+Texture earthDayTex;
+Texture earthCloudTex;
+bool useEarthShader = true;
+
+// -----------------------------------------------------------------
+// Ресурсы для фона (Milky Way)
+// -----------------------------------------------------------------
+Shader backgroundShader;
+Texture milkyWayTex;
+bool useBackground = true;
 
 // -----------------------------------------------------------------
 // Класс орбиты
@@ -91,17 +100,19 @@ public:
 };
 
 // -----------------------------------------------------------------
-// Зона покрытия
+// Зона покрытия (исправленная для масштаба сцены)
 // -----------------------------------------------------------------
 class CoverageZone {
 public:
-    static constexpr double EARTH_RADIUS = 6371000.0;
-    static std::vector<Vector3> computeBoundary(const Vector3& satPos, int seg = 64) {
+    static constexpr double EARTH_RADIUS_SCENE = 5.0;
+
+    static std::vector<Vector3> computeBoundary(const Vector3& satPosScaled, int seg = 64) {
         std::vector<Vector3> boundary;
-        double R = EARTH_RADIUS, r = satPos.length();
+        double R = EARTH_RADIUS_SCENE;
+        double r = satPosScaled.length();
         if (r <= R) return boundary;
         double theta = acos(R / r);
-        Vector3 dir = satPos.normalize();
+        Vector3 dir = satPosScaled.normalize();
         Vector3 u = (fabs(dir.x()) < 0.9) ? Vector3(1, 0, 0) : Vector3(0, 1, 0);
         Vector3 v = (dir ^ u).normalize();
         Vector3 w = (v ^ dir).normalize();
@@ -113,19 +124,19 @@ public:
         }
         return boundary;
     }
+
     static void drawWireframe(const std::vector<Vector3>& boundary, const Vector3& satPosScaled) {
         if (boundary.empty()) return;
         glDisable(GL_LIGHTING);
         glColor3f(0, 1, 0);
         glLineWidth(2);
         glBegin(GL_LINE_LOOP);
-        for (auto& p : boundary)
-            glVertex3d(p.x() / 1e5, p.y() / 1e5, p.z() / 1e5);
+        for (auto& p : boundary) glVertex3d(p.x(), p.y(), p.z());
         glEnd();
         glBegin(GL_LINES);
         for (auto& p : boundary) {
             glVertex3d(satPosScaled.x(), satPosScaled.y(), satPosScaled.z());
-            glVertex3d(p.x() / 1e5, p.y() / 1e5, p.z() / 1e5);
+            glVertex3d(p.x(), p.y(), p.z());
         }
         glEnd();
         glEnable(GL_LIGHTING);
@@ -161,69 +172,116 @@ public:
 };
 
 // -----------------------------------------------------------------
-// Отрисовщик Земли (без шейдера, синяя)
-// -----------------------------------------------------------------
-class EarthRenderer {
-    GLUquadric* quad = nullptr;
-public:
-    EarthRenderer() {
-        quad = gluNewQuadric();
-        gluQuadricTexture(quad, GL_TRUE);
-        gluQuadricNormals(quad, GLU_SMOOTH);
-    }
-    ~EarthRenderer() { if (quad) gluDeleteQuadric(quad); }
-    void drawRaw() {
-        gluSphere(quad, 5.0, 128, 128);
-    }
-};
-
-// -----------------------------------------------------------------
-// UI с параметрами орбиты (временно отключён)
-// -----------------------------------------------------------------
-class OrbitUI {
-    GuiTextRectangle panel;
-    bool show;
-public:
-    OrbitUI() : show(true) { panel.setSize(480, 340); }
-    void update(const Orbit& o, double dt, double totalTime) {
-        if (!show) return;
-        std::wstringstream ss;
-        ss << std::fixed << std::setprecision(2);
-        ss << L"=== Orbital Parameters ===\n";
-        ss << L"a: " << o.a / 1000.0 << L" km\n";
-        ss << L"e: " << o.e << L"\n";
-        ss << L"i: " << o.i * 180.0 / M_PI << L" deg\n";
-        ss << L"\x03a9: " << o.Omega * 180.0 / M_PI << L" deg\n";
-        ss << L"\x03c9: " << o.omega * 180.0 / M_PI << L" deg\n";
-        ss << L"\x03bd: " << o.nu * 180.0 / M_PI << L" deg\n";
-        ss << L"Radius: " << o.radius() / 1000.0 << L" km\n";
-        ss << L"Speed: " << o.speed() / 1000.0 << L" km/s\n";
-        ss << L"Period: " << o.period() / 60.0 << L" min\n";
-        ss << L"Time: " << totalTime << L" s\n";
-        ss << L"\nUp/Dn: a   Left/Right: e\n";
-        ss << L"+/-: i   [/]: \x03a9   ;/': \x03c9   9/0: \x03bd\n";
-        ss << L"U - toggle UI   C - coverage\n";
-        panel.setText(ss.str().c_str(), 255, 255, 255);
-    }
-    void draw(int w, int h) {
-        if (show) {
-            panel.setPosition(10, h - panel.getHeight() - 10);
-            panel.Draw();
-        }
-    }
-    void toggle() { show = !show; }
-};
-
-// -----------------------------------------------------------------
 // Глобальные переменные
 // -----------------------------------------------------------------
 bool texturing = true, lightning = true, alpha = false;
 Orbit currentOrbit(7e6, 0.1, 0.2, 0.5, 0.3, 0.0);
 Satellite sat(currentOrbit);
-EarthRenderer earth;
-OrbitUI ui;
 double simTime = 0.0;
 bool showCoverage = true;
+bool showSatInfo = true;
+GuiTextRectangle satInfoText;
+
+// -----------------------------------------------------------------
+// Отрисовка орбиты (trace)
+// -----------------------------------------------------------------
+void drawOrbitTrace(const Orbit& orbit, int segments = 360) {
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glColor3f(0.7f, 0.7f, 1.0f);
+    glLineWidth(1.5f);
+    glBegin(GL_LINE_LOOP);
+    for (int i = 0; i <= segments; ++i) {
+        double nu = 2.0 * M_PI * i / segments;
+        Orbit tempOrbit = orbit;
+        tempOrbit.nu = nu;
+        Vector3 pos = tempOrbit.toEci();
+        glVertex3d(pos.x() / 1e5, pos.y() / 1e5, pos.z() / 1e5);
+    }
+    glEnd();
+    glEnable(GL_LIGHTING);
+    glEnable(GL_TEXTURE_2D);
+}
+
+// -----------------------------------------------------------------
+// Инициализация ресурсов Земли
+// -----------------------------------------------------------------
+void initEarthResources() {
+    earthDayTex.LoadTexture("textures/earth_day.jpg");
+    earthCloudTex.LoadTexture("textures/earth_clouds.jpg");
+    earthShader.VshaderFileName = "shaders/earth.vert";
+    earthShader.FshaderFileName = "shaders/earth.frag";
+    earthShader.LoadShaderFromFile();
+    earthShader.Compile();
+}
+
+// -----------------------------------------------------------------
+// Инициализация фона
+// -----------------------------------------------------------------
+void initBackground() {
+    milkyWayTex.LoadTexture("textures/milky_way.jpg");
+    backgroundShader.VshaderFileName = "shaders/background.vert";
+    backgroundShader.FshaderFileName = "shaders/background.frag";
+    backgroundShader.LoadShaderFromFile();
+    backgroundShader.Compile();
+}
+
+// -----------------------------------------------------------------
+// Отрисовка фона
+// -----------------------------------------------------------------
+void drawBackground() {
+    if (!useBackground) return;
+    glPushAttrib(GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_TEXTURE_2D);
+    backgroundShader.UseShader();
+    milkyWayTex.Bind(0);
+    glUniform1iARB(glGetUniformLocationARB(backgroundShader.program, "u_texture"), 0);
+    GLUquadric* quad = gluNewQuadric();
+    gluQuadricTexture(quad, GL_TRUE);
+    gluSphere(quad, 100.0, 64, 64);
+    gluDeleteQuadric(quad);
+    backgroundShader.DontUseShaders();
+    glPopAttrib();
+}
+
+// -----------------------------------------------------------------
+// Отрисовка Земли с освещением
+// -----------------------------------------------------------------
+void drawEarthWithShaders() {
+    if (!useEarthShader) {
+        glDisable(GL_TEXTURE_2D);
+        glColor3f(0.2f, 0.3f, 0.8f);
+        GLUquadric* quad = gluNewQuadric();
+        gluSphere(quad, 5.0, 64, 64);
+        gluDeleteQuadric(quad);
+        glEnable(GL_TEXTURE_2D);
+        return;
+    }
+    earthShader.UseShader();
+    GLfloat lightDirWorld[3] = { (float)light.x(), (float)light.y(), (float)light.z() };
+    float len = sqrt(lightDirWorld[0] * lightDirWorld[0] + lightDirWorld[1] * lightDirWorld[1] + lightDirWorld[2] * lightDirWorld[2]);
+    if (len > 0.0f) {
+        lightDirWorld[0] /= len; lightDirWorld[1] /= len; lightDirWorld[2] /= len;
+    }
+    else {
+        lightDirWorld[0] = 1.0f; lightDirWorld[1] = 0.0f; lightDirWorld[2] = 0.0f;
+    }
+    glUniform3fvARB(glGetUniformLocationARB(earthShader.program, "u_lightDirWorld"), 1, lightDirWorld);
+    glUniform1fARB(glGetUniformLocationARB(earthShader.program, "u_lightIntensity"), 1.8f);
+    glUniform1fARB(glGetUniformLocationARB(earthShader.program, "u_ambientStrength"), 0.3f);
+    earthDayTex.Bind(0);
+    earthCloudTex.Bind(1);
+    glUniform1iARB(glGetUniformLocationARB(earthShader.program, "u_dayTex"), 0);
+    glUniform1iARB(glGetUniformLocationARB(earthShader.program, "u_cloudTex"), 1);
+    GLUquadric* quad = gluNewQuadric();
+    gluQuadricTexture(quad, GL_TRUE);
+    gluQuadricNormals(quad, GLU_SMOOTH);
+    gluSphere(quad, 5.0, 128, 128);
+    gluDeleteQuadric(quad);
+    earthShader.DontUseShaders();
+}
 
 // -----------------------------------------------------------------
 // Обработчики клавиш
@@ -234,14 +292,17 @@ void switchModes(OpenGL* sender, KeyEventArg arg) {
     case 'L': lightning = !lightning; break;
     case 'T': texturing = !texturing; break;
     case 'A': alpha = !alpha; break;
+    case 'M': useEarthShader = !useEarthShader; break;
+    case 'B': useBackground = !useBackground; break;
+    case 'C': showCoverage = !showCoverage; break;
+    case 'I': showSatInfo = !showSatInfo; break;
     }
 }
 
 void handleOrbitInput(OpenGL* sender, KeyEventArg arg) {
     int key = arg.key;
     double step_a = 1e5, step_e = 0.01, step_i = 0.05;
-    double step_O = 0.1, step_w = 0.1, step_n = 0.1;
-
+    double step_O = 0.1, step_w = 0.1, step_n = 0.05;
     if (key == VK_UP) {
         currentOrbit.a += step_a;
     }
@@ -265,10 +326,10 @@ void handleOrbitInput(OpenGL* sender, KeyEventArg arg) {
         case '\'': currentOrbit.omega -= step_w; break;
         case '9': currentOrbit.nu += step_n; break;
         case '0': currentOrbit.nu -= step_n; break;
-        case 'u': ui.toggle(); break;
-        case 'c': showCoverage = !showCoverage; break;
         }
     }
+    currentOrbit.nu = fmod(currentOrbit.nu, 2.0 * M_PI);
+    if (currentOrbit.nu < 0) currentOrbit.nu += 2.0 * M_PI;
     sat.orbit = currentOrbit;
 }
 
@@ -277,29 +338,21 @@ void handleOrbitInput(OpenGL* sender, KeyEventArg arg) {
 // -----------------------------------------------------------------
 void initRender() {
     initShadersFunctions();
-
-    // // Загрузка шейдеров (пока закомментировано)
-    // earthShader.VshaderFileName = "shaders/earth.vert";
-    // earthShader.FshaderFileName = "shaders/earth.frag";
-    // earthShader.LoadShaderFromFile();
-    // earthShader.Compile();
-
     sat.loadModel("models/satellite.obj");
     sat.orbit = currentOrbit;
-
+    initEarthResources();
+    initBackground();
+    satInfoText.setSize(300, 120);
     gl.KeyDownEvent.reaction(handleOrbitInput);
     gl.KeyDownEvent.reaction(switchModes);
-
     gl.WheelEvent.reaction([&](OpenGL* sender, MouseWheelEventArg arg) { camera.Zoom(sender, arg); });
     gl.MouseMovieEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { camera.MouseMovie(sender, arg); });
     gl.MouseLeaveEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { camera.MouseLeave(sender, arg); });
     gl.MouseLdownEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { camera.MouseStartDrag(sender, arg); });
     gl.MouseLupEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { camera.MouseStopDrag(sender, arg); });
-
     gl.MouseMovieEvent.reaction([&](OpenGL* sender, MouseEventArg arg) { light.MoveLight(sender, arg); });
     gl.KeyDownEvent.reaction([&](OpenGL* sender, KeyEventArg arg) { light.StartDrug(sender, arg); });
     gl.KeyUpEvent.reaction([&](OpenGL* sender, KeyEventArg arg) { light.StopDrug(sender, arg); });
-
     camera.setPosition(0, 0, 50);
     camera.caclulateCameraPos();
 }
@@ -310,13 +363,10 @@ void initRender() {
 void Render(double delta_time) {
     simTime += delta_time;
     sat.update(delta_time);
-
     if (gl.isKeyPressed('F'))
         light.SetPosition(camera.x(), camera.y(), camera.z());
     camera.SetUpCamera();
     light.SetUpLight();
-    gl.DrawAxes();
-
     if (lightning) glEnable(GL_LIGHTING);
     else glDisable(GL_LIGHTING);
     if (texturing) glEnable(GL_TEXTURE_2D);
@@ -329,38 +379,14 @@ void Render(double delta_time) {
         glDisable(GL_BLEND);
     }
     glEnable(GL_NORMALIZE);
-
-    // Рисуем Землю синим цветом (без шейдера)
-    glDisable(GL_TEXTURE_2D);
-    glColor3f(0.2f, 0.3f, 0.8f);
-    earth.drawRaw();
-
-    // Спутник
+    drawBackground();
+    drawEarthWithShaders();
+    drawOrbitTrace(currentOrbit, 360);
     glColor3f(0.8f, 0.8f, 0.8f);
     sat.draw(0.5);
-
-    // Зона покрытия
     if (showCoverage) {
-        auto boundary = CoverageZone::computeBoundary(sat.cachedPos, 128);
+        auto boundary = CoverageZone::computeBoundary(sat.getScaledPosition(), 128);
         CoverageZone::drawWireframe(boundary, sat.getScaledPosition());
     }
-
     light.DrawLightGizmo();
-
-    // 2D UI (отключён)
-    /*
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-    glOrtho(0, gl.getWidth() - 1, 0, gl.getHeight() - 1, 0, 1);
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-    ui.update(currentOrbit, delta_time, simTime);
-    ui.draw(gl.getWidth(), gl.getHeight());
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    glPopMatrix();
-    */
 }

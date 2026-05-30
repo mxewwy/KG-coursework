@@ -8,5 +8,6 @@ public:
     ~Texture();
     void LoadTexture(const std::string& filename);
     void Bind();
-    unsigned int getTexId() const { return texId; }   // ЭТО НУЖНО ДОБАВИТЬ
+    void Bind(int unit);
+    unsigned int getTexId() const { return texId; }
 };

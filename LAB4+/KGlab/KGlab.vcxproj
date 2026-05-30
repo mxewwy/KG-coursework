@@ -161,6 +161,8 @@
     <ClInclude Include="Vector3.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\background.frag" />
+    <None Include="shaders\background.vert" />
     <None Include="shaders\cassini.frag" />
     <None Include="shaders\earth.frag" />
     <None Include="shaders\earth.vert" />
