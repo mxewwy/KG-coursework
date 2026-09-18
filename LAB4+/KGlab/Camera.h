@@ -16,7 +16,6 @@ class Camera
     bool drag = false;
 
   public:
-    // Начальные углы камеры
     double _fi1 = 1;
     double _fi2 = 0.5;
 
