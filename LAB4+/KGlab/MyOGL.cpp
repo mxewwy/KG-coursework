@@ -14,7 +14,6 @@ OpenGL gl;
 
 HWND wnd;
 
-// Блокировщики
 std::mutex hwnd_mutex;
 std::mutex message_mutex;
 std::condition_variable message_cv;
@@ -145,7 +144,6 @@ void message_cycle()
                 gl.keyDown(m.wParam);
                 break;
             case WM_CLOSE:
-                // b_render = false;
                 bMsg = false;
                 msg_deque.clear();
                 break;
