@@ -29,7 +29,6 @@ void Texture::LoadTexture(const std::string& texture_file_name)
     int x, y, n;
     unsigned char* data = stbi_load(texture_file_name.c_str(), &x, &y, &n, 4);
 
-    // переворот изображения
     unsigned char* _tmp = new unsigned char[x * 4];
     for (int i = 0; i < y / 2; ++i)
     {
@@ -58,7 +57,6 @@ void Texture::Bind()
 
 void Texture::Bind(int unit)
 {
-    // glActiveTexture уже инициализирован в initShadersFunctions()
     extern PFNGLACTIVETEXTUREPROC glActiveTexture;
     if (glActiveTexture)
         glActiveTexture(GL_TEXTURE0 + unit);
