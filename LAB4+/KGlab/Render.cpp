@@ -35,24 +35,15 @@ extern OpenGL gl;
 Light light;
 Camera camera;
 
-// -----------------------------------------------------------------
-// Ресурсы для Земли
-// -----------------------------------------------------------------
 Shader earthShader;
 Texture earthDayTex;
 Texture earthCloudTex;
 bool useEarthShader = true;
 
-// -----------------------------------------------------------------
-// Ресурсы для фона (Milky Way)
-// -----------------------------------------------------------------
 Shader backgroundShader;
 Texture milkyWayTex;
 bool useBackground = true;
 
-// -----------------------------------------------------------------
-// Класс орбиты
-// -----------------------------------------------------------------
 class Orbit {
 public:
     double a, e, i, Omega, omega, nu;
@@ -99,9 +90,6 @@ public:
     }
 };
 
-// -----------------------------------------------------------------
-// Зона покрытия (исправленная для масштаба сцены)
-// -----------------------------------------------------------------
 class CoverageZone {
 public:
     static constexpr double EARTH_RADIUS_SCENE = 5.0;
@@ -143,9 +131,6 @@ public:
     }
 };
 
-// -----------------------------------------------------------------
-// Спутник
-// -----------------------------------------------------------------
 class Satellite {
 public:
     Orbit orbit;
@@ -171,9 +156,6 @@ public:
     }
 };
 
-// -----------------------------------------------------------------
-// Глобальные переменные
-// -----------------------------------------------------------------
 bool texturing = true, lightning = true, alpha = false;
 Orbit currentOrbit(7e6, 0.1, 0.2, 0.5, 0.3, 0.0);
 Satellite sat(currentOrbit);
@@ -182,9 +164,6 @@ bool showCoverage = true;
 bool showSatInfo = true;
 GuiTextRectangle satInfoText;
 
-// -----------------------------------------------------------------
-// Отрисовка орбиты (trace)
-// -----------------------------------------------------------------
 void drawOrbitTrace(const Orbit& orbit, int segments = 360) {
     glDisable(GL_LIGHTING);
     glDisable(GL_TEXTURE_2D);
@@ -203,9 +182,6 @@ void drawOrbitTrace(const Orbit& orbit, int segments = 360) {
     glEnable(GL_TEXTURE_2D);
 }
 
-// -----------------------------------------------------------------
-// Инициализация ресурсов Земли
-// -----------------------------------------------------------------
 void initEarthResources() {
     earthDayTex.LoadTexture("textures/earth_day.jpg");
     earthCloudTex.LoadTexture("textures/earth_clouds.jpg");
@@ -215,9 +191,6 @@ void initEarthResources() {
     earthShader.Compile();
 }
 
-// -----------------------------------------------------------------
-// Инициализация фона
-// -----------------------------------------------------------------
 void initBackground() {
     milkyWayTex.LoadTexture("textures/milky_way.jpg");
     backgroundShader.VshaderFileName = "shaders/background.vert";
@@ -226,9 +199,6 @@ void initBackground() {
     backgroundShader.Compile();
 }
 
-// -----------------------------------------------------------------
-// Отрисовка фона
-// -----------------------------------------------------------------
 void drawBackground() {
     if (!useBackground) return;
     glPushAttrib(GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT);
@@ -246,9 +216,6 @@ void drawBackground() {
     glPopAttrib();
 }
 
-// -----------------------------------------------------------------
-// Отрисовка Земли с освещением
-// -----------------------------------------------------------------
 void drawEarthWithShaders() {
     if (!useEarthShader) {
         glDisable(GL_TEXTURE_2D);
@@ -283,9 +250,6 @@ void drawEarthWithShaders() {
     earthShader.DontUseShaders();
 }
 
-// -----------------------------------------------------------------
-// Обработчики клавиш
-// -----------------------------------------------------------------
 void switchModes(OpenGL* sender, KeyEventArg arg) {
     char key = LOWORD(MapVirtualKeyA(arg.key, MAPVK_VK_TO_CHAR));
     switch (key) {
@@ -333,9 +297,6 @@ void handleOrbitInput(OpenGL* sender, KeyEventArg arg) {
     sat.orbit = currentOrbit;
 }
 
-// -----------------------------------------------------------------
-// Инициализация
-// -----------------------------------------------------------------
 void initRender() {
     initShadersFunctions();
     sat.loadModel("models/satellite.obj");
@@ -357,9 +318,6 @@ void initRender() {
     camera.caclulateCameraPos();
 }
 
-// -----------------------------------------------------------------
-// Основной рендер
-// -----------------------------------------------------------------
 void Render(double delta_time) {
     simTime += delta_time;
     sat.update(delta_time);
