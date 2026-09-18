@@ -7,7 +7,6 @@
 void initRender();
 void Render(double);
 
-// Глобальные ресурсы для Земли (объявлены extern, определены в Render.cpp)
 extern Shader earthShader;
 extern Texture earthDayTex;
 extern Texture earthNightTex;
