@@ -33,22 +33,18 @@ PFNGLACTIVETEXTUREPROC glActiveTexture;
 
 int loadShader(const char* filename, char** shaderSrc, int* programLength)
 {
-    // Открываем файл
     HANDLE file = CreateFileA(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
     LARGE_INTEGER size;
 
-    // Узнаем размер файла
     GetFileSizeEx(file, &size);
 
     *programLength = (int)size.LowPart;
 
-    // Выделяем память под буфер для считывания шейдера
     *shaderSrc = (char*)malloc(*programLength * sizeof(char));
     int sss = *programLength * sizeof(char);
 
     DWORD nBytesRead = 0;
-    // Считываем шейдер в буфер
     ReadFile(file, *shaderSrc, *programLength, &nBytesRead, 0);
     CloseHandle(file);
     return 1;
@@ -56,7 +52,6 @@ int loadShader(const char* filename, char** shaderSrc, int* programLength)
 bool init = false;
 void initShadersFunctions()
 {
-    // Наполняем делегаты адресами на функции
     glCreateShaderObjectARB = (PFNGLCREATESHADEROBJECTARBPROC)wglGetProcAddress("glCreateShaderObjectARB");
     glCreateProgramObjectARB = (PFNGLCREATEPROGRAMOBJECTARBPROC)wglGetProcAddress("glCreateProgramObjectARB");
     glAttachObjectARB = (PFNGLATTACHOBJECTARBPROC)wglGetProcAddress("glAttachObjectARB");
@@ -72,7 +67,6 @@ void initShadersFunctions()
 
     glGetUniformLocationARB = (PFNGLGETUNIFORMLOCATIONARBPROC)wglGetProcAddress("glGetUniformLocationARB");
 
-    // Функции передачи float-ов в шейдеры
     glUniform1fARB = (PFNGLUNIFORM1FARBPROC)wglGetProcAddress("glUniform1fARB");
     glUniform2fARB = (PFNGLUNIFORM2FARBPROC)wglGetProcAddress("glUniform2fARB");
     glUniform3fARB = (PFNGLUNIFORM3FARBPROC)wglGetProcAddress("glUniform3fARB");
@@ -83,7 +77,6 @@ void initShadersFunctions()
     glUniform3fvARB = (PFNGLUNIFORM4FVARBPROC)wglGetProcAddress("glUniform3fvARB");
     glUniform4fvARB = (PFNGLUNIFORM4FVARBPROC)wglGetProcAddress("glUniform4fvARB");
 
-    // Функуции передачи int-ов c itqlthfvb
     glUniform1iARB = (PFNGLUNIFORM1IARBPROC)wglGetProcAddress("glUniform1iARB");
 
     glActiveTexture = (PFNGLACTIVETEXTUREPROC)wglGetProcAddress("glActiveTexture");
@@ -127,10 +120,8 @@ void Shader::LoadShaderFromFile()
 
 void Shader::Compile()
 {
-    // Компиляция фрагментного шейдера
     glCompileShaderARB(fragment);
     {
-        // Получение сообщения о ошибках компиляции
         int compiled = 0;
         int length = 0;
         int laux = 0;
@@ -158,11 +149,9 @@ void Shader::Compile()
         delete log;
     }
 
-    // Привязывем шейдер к программному объекту
     glAttachObjectARB(program, fragment);
     glAttachObjectARB(program, vertex);
 
-    // Линкуем
     glLinkProgramARB(program);
     {
         int result = 0;
