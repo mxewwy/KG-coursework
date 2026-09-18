@@ -1,4 +1,3 @@
-// Чтобы функции WinAPI принимали строки wchar_t*, а не char*
 #ifndef UNICODE
 #define UNICODE
 #endif
@@ -9,10 +8,8 @@
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-// Функция main под Windows
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
-    // Регистрируем класс окна
     const wchar_t CLASS_NAME[] = L"Window Class";
 
     WNDCLASS wc = {};
@@ -25,19 +22,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
     RegisterClass(&wc);
 
-    // Создаём окно
-	HWND hwnd = CreateWindowEx(0,                    // Опциональные стили
-                               CLASS_NAME,           // Класс окна
-                               L"Orbit Visualiser", // Имя окна
-                               WS_OVERLAPPEDWINDOW,  // Стиль окна
+	HWND hwnd = CreateWindowEx(0,
+                               CLASS_NAME,
+                               L"Orbit Visualiser",
+                               WS_OVERLAPPEDWINDOW,
 
-                               // Размер и позиция
                                CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 
-                               NULL,      // Предшествующее окно
-                               NULL,      // Меню
-                               hInstance, // Управление экземпляром
-                               NULL       // Дополнительная информация
+                               NULL,
+                               NULL,
+                               hInstance,
+                               NULL
     );
 
     if (hwnd == NULL)
@@ -46,8 +41,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     }
 
     ShowWindow(hwnd, nCmdShow);
-
-    // Run the message loop.
 
     MSG msg = {};
     while (GetMessage(&msg, NULL, 0, 0) > 0)
@@ -130,10 +123,6 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
-
-        // All painting occurs here, between BeginPaint and EndPaint.
-
-        // FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 1));
 
         EndPaint(hWnd, &ps);
     }
