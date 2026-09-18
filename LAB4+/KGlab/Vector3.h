@@ -1,5 +1,3 @@
-// Гаврилов А.Г.
-// 27.12.2024
 #pragma once
 
 #include <cmath>
@@ -16,7 +14,6 @@ public:
     double y() const { return coords[1]; }
     double z() const { return coords[2]; }
 
-    // Конструкторы
 #pragma region Constructors
     Vector3() { coords = new double[3] {0, 0, 0}; }
 
@@ -89,7 +86,6 @@ public:
         return sqrt(coords[0] * coords[0] + coords[1] * coords[1] + coords[2] * coords[2]);
     }
 
-    // ИСПРАВЛЕННЫЙ МЕТОД: теперь const
     Vector3 normalize() const {
         double l = length();
         if (l < 1e-12) return Vector3(0, 0, 0);
