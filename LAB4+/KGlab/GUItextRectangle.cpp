@@ -70,8 +70,6 @@ void GuiTextRectangle::setSize(int width, int height)
         delete _d->_tmp;
     _d->_tmp = new unsigned char[_d->w * _d->h * 4];
 
-    // Прямоугольник для текста
-
     glDeleteTextures(1, &(_d->tex_id));
     glGenTextures(1, &(_d->tex_id));
 
@@ -82,8 +80,6 @@ void GuiTextRectangle::setSize(int width, int height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-    // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    // glEnable(GL_BLEND);
 }
 
 int GuiTextRectangle::getWidth()
@@ -109,7 +105,6 @@ void GuiTextRectangle::setText(const wchar_t* text, char r, char g, char b)
     _d->r.bottom = _d->h;
 
     std::fill<byte*, byte>((byte*)(_d->b), (byte*)(_d->b) + _d->w * _d->h * 4, (byte)255);
-    // std::fill<byte*, byte>((byte*)(_d->_tmp), (byte*)(_d->_tmp) + _d->w * _d->h * 4, (byte)0);
 
     SetBkColor(_d->dc, RGB(255, 255, 255));
     SetTextColor(_d->dc, RGB(r, g, b));
@@ -119,7 +114,6 @@ void GuiTextRectangle::setText(const wchar_t* text, char r, char g, char b)
 
     SelectObject(_d->dc, hFont);
 
-    // Рисуем текст
     DrawText(_d->dc, text, -1, &(_d->r), 0);
 
     DeleteObject(hFont);
@@ -133,10 +127,6 @@ void GuiTextRectangle::setText(const wchar_t* text, char r, char g, char b)
             *(_tmp + i * _d->w * 4 + j * 4 + 0) = *(_d->b + i * _d->w * 4 + j * 4 + 0);
             *(_tmp + i * _d->w * 4 + j * 4 + 1) = *(_d->b + i * _d->w * 4 + j * 4 + 1);
             *(_tmp + i * _d->w * 4 + j * 4 + 2) = *(_d->b + i * _d->w * 4 + j * 4 + 2);
-
-            //*(_tmp + i * _d->w * 4 + j * 4 + 3) = 255 - *(_tmp + i * _d->w * 4 + j * 4 + 0) * 0.333 +
-            //	*(_tmp + i * _d->w * 4 + j * 4 + 1) * 0.333 +
-            //	*(_tmp + i * _d->w * 4 + j * 4 + 2) * 0.333;
 
             if (*(_d->b + i * _d->w * 4 + j * 4 + 0) == 255 && *(_d->b + i * _d->w * 4 + j * 4 + 1) == 255 &&
                 *(_d->b + i * _d->w * 4 + j * 4 + 2) == 255)
@@ -152,7 +142,6 @@ void GuiTextRectangle::Draw()
 {
     GuiTextRectanglePrivate* _d = d_func();
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    //
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
