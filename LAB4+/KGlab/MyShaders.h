@@ -41,7 +41,6 @@ extern PFNGLACTIVETEXTUREPROC glActiveTexture;
 void initShadersFunctions();
 int loadShader(const char* filename, char** shaderSrc, int* programLength);
 
-// Вызываем эту функцию перед рендером для настройки шейдеров
 void initShadersFunctions();
 
 class Shader
@@ -72,11 +71,4 @@ class Shader
     static void DontUseShaders();
 };
 
-// Загружает код шейдера из файла
-//************************************
-// Parameter: char * filename      Имя файла
-// Parameter: char * * shaderSrc   Указатель на массив символов, в который загрузится код шейдера. После того, как
-//   станет ненужным, надо освободить память!
-// Parameter: int * programLength  Указатель на длину массива символов.
-//************************************
 int loadShader(const char* filename, char** shaderSrc, int* programLength);
