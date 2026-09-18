@@ -1,9 +1,7 @@
 #include "Camera.h"
 
-
 #include <windows.h>
 #include <GL/glu.h>
-
 
 void Camera::setPosition(double x, double y, double z)
 {
@@ -67,9 +65,6 @@ void Camera::MouseMovie(OpenGL* sender, MouseEventArg arg)
 
 void Camera::SetUpCamera()
 {
-    // Сообщаем OpenGL настройки нашей камеры,
-    // где она находится и куда смотрит
-    // https://learn.microsoft.com/ru-ru/windows/win32/opengl/glulookat
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     gluLookAt(camX, camY, camZ, 0, 0, 0, 0, 0, camNz);
