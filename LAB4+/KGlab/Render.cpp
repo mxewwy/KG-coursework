@@ -2,7 +2,6 @@
 #include "MyShaders.h"
 #include "ObjLoader.h"
 #include "Texture.h"
-#include "GUItextRectangle.h"
 
 #ifndef MAX
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
@@ -159,10 +158,7 @@ public:
 bool texturing = true, lightning = true, alpha = false;
 Orbit currentOrbit(7e6, 0.1, 0.2, 0.5, 0.3, 0.0);
 Satellite sat(currentOrbit);
-double simTime = 0.0;
 bool showCoverage = true;
-bool showSatInfo = true;
-GuiTextRectangle satInfoText;
 
 void drawOrbitTrace(const Orbit& orbit, int segments = 360) {
     glDisable(GL_LIGHTING);
@@ -259,7 +255,6 @@ void switchModes(OpenGL* sender, KeyEventArg arg) {
     case 'M': useEarthShader = !useEarthShader; break;
     case 'B': useBackground = !useBackground; break;
     case 'C': showCoverage = !showCoverage; break;
-    case 'I': showSatInfo = !showSatInfo; break;
     }
 }
 
@@ -303,7 +298,6 @@ void initRender() {
     sat.orbit = currentOrbit;
     initEarthResources();
     initBackground();
-    satInfoText.setSize(300, 120);
     gl.KeyDownEvent.reaction(handleOrbitInput);
     gl.KeyDownEvent.reaction(switchModes);
     gl.WheelEvent.reaction([&](OpenGL* sender, MouseWheelEventArg arg) { camera.Zoom(sender, arg); });
@@ -319,7 +313,6 @@ void initRender() {
 }
 
 void Render(double delta_time) {
-    simTime += delta_time;
     sat.update(delta_time);
     if (gl.isKeyPressed('F'))
         light.SetPosition(camera.x(), camera.y(), camera.z());
