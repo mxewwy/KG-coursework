@@ -2,7 +2,6 @@
 
 class GuiTextRectanglePrivate;
 
-// Прямоугольник с текстом
 class GuiTextRectangle
 {
   protected:
