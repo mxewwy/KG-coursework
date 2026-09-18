@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <list>
 #include <windows.h>
 #include <GL/gl.h>
@@ -88,12 +87,11 @@ class ObjModel
 
         Faces.clear();
     }
-    inline void Draw(GLenum mode = 0x0009) // GL_POLYGON
+    inline void Draw(GLenum mode = 0x0009)
     {
         glCallList(listId);
     }
 
     int LoadModel(const char* filename);
 
-    // ObjFile(const ObjFile)
 };
